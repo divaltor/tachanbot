@@ -137,3 +137,4 @@ docker-compose.yml
 .ruff_cache/
 promote.py
 insert_users.py
+.amp/portals/*

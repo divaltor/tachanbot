@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+# Prepares an Amp orb: ffmpeg for yt-dlp, a venv with app and dev dependencies,
+# and cached pre-commit hooks. Safe to rerun on a warm snapshot.
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$repo_root"
+
+step() {
+  local name="$1"
+  shift
+  local start=$SECONDS
+  echo "==> $name"
+  "$@"
+  echo "<== $name ($((SECONDS - start))s)"
+}
+
+install_system_packages() {
+  local missing=()
+  command -v ffmpeg >/dev/null || missing+=(ffmpeg)
+  command -v git >/dev/null || missing+=(git)
+  command -v curl >/dev/null || missing+=(curl ca-certificates)
+  if ((${#missing[@]})); then
+    sudo apt-get update
+    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${missing[@]}"
+  fi
+}
+
+install_uv() {
+  if ! command -v uv >/dev/null && [[ ! -x "$HOME/.local/bin/uv" ]]; then
+    curl -LsSf https://astral.sh/uv/install.sh | env UV_NO_MODIFY_PATH=1 sh
+  fi
+}
+
+install_python_deps() {
+  [[ -x venv/bin/python ]] || uv venv venv
+  uv pip install --python venv/bin/python -r requirements.txt -r requirements.dev.txt
+}
+
+install_pre_commit() {
+  venv/bin/pre-commit install
+  venv/bin/pre-commit install-hooks
+}
+
+persist_venv() {
+  local marker="# tachanbot venv"
+  # A new ~/.bash_profile would stop bash from reading ~/.profile, so keep it loaded.
+  if [[ ! -e "$HOME/.bash_profile" && -f "$HOME/.profile" ]]; then
+    echo '[[ -f "$HOME/.profile" ]] && . "$HOME/.profile"' >"$HOME/.bash_profile"
+  fi
+  if ! grep -Fqx "$marker" "$HOME/.bash_profile" 2>/dev/null; then
+    cat >>"$HOME/.bash_profile" <<EOF
+
+$marker
+if [[ "\${PWD}/" == "$repo_root/"* && -d "$repo_root/venv/bin" && ":\${PATH}:" != *":$repo_root/venv/bin:"* ]]; then
+  export VIRTUAL_ENV="$repo_root/venv"
+  export PATH="$repo_root/venv/bin:\${PATH}"
+fi
+EOF
+  fi
+}
+
+export PATH="$HOME/.local/bin:$PATH"
+step "system packages" install_system_packages
+step "uv" install_uv
+step "python dependencies" install_python_deps
+step "pre-commit hooks" install_pre_commit
+step "login shell venv" persist_venv
