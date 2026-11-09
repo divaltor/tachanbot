@@ -22,8 +22,6 @@ conn.execute(
 
 def restore_previous_boss_title(new_boss_user_id):
     rows = conn.execute("SELECT user_id, old_title FROM dank_boss_titles").fetchall()
-    if not rows:
-        return
     for previous_boss_id, old_title in rows:
         if new_boss_user_id and previous_boss_id == new_boss_user_id:
             continue
@@ -33,14 +31,14 @@ def restore_previous_boss_title(new_boss_user_id):
                 bot.set_chat_administrator_custom_title(
                     memes_chat_id, previous_boss_id, old_title or ""
                 )
-        except Exception as err:
-            print(err)
-        finally:
+            # Keep the row on failure so the title is restored on the next run
             conn.execute(
                 "DELETE FROM dank_boss_titles WHERE user_id = ?",
                 (previous_boss_id,),
             )
             conn.commit()
+        except Exception as err:
+            print(err)
 
 
 def save_boss_old_title(user_id):
@@ -135,6 +133,7 @@ def main():
         message_thread_id=flood_thread_id,
         parse_mode="Markdown",
     )
+    restore_previous_boss_title(gold_user_id)
     if not gold_user_id:
         return
     saved_title = False
@@ -149,7 +148,6 @@ def main():
                 parse_mode="Markdown",
             )
         else:
-            restore_previous_boss_title(gold_user_id)
             saved_title = save_boss_old_title(gold_user_id)
             bot.set_chat_administrator_custom_title(
                 chat_id=memes_chat_id,
@@ -169,6 +167,7 @@ def main():
             message_thread_id=flood_thread_id,
             parse_mode="Markdown",
         )
+        return
     bot.send_message(
         memes_chat_id,
         "Почет и уважение новому босу данка на эту неделю! [{}](tg://user?id={})".format(
